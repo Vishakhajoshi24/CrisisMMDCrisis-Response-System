@@ -4,19 +4,19 @@ from PIL import Image
 from torchvision import transforms
 from transformers import DistilBertTokenizerFast
 
-# ✅ Load our lightweight multimodal fusion model
+# ✅ Import our lightweight fusion model
 from models.model import MiniFusion
 
-# --------------------------------------
-# ✅ App Title
-# --------------------------------------
+# ---------------------------------------------------
+# ✅ Streamlit Page Config
+# ---------------------------------------------------
 st.set_page_config(page_title="Crisis Damage Detection - Multimodal")
-st.title("🔥 CrisisMMD — Multimodal Damage Classification (CPU-Friendly)")
-st.write("Upload an image + enter text to classify disaster damage using a multimodal fusion model.")
+st.title("🔥 CrisisMMD — Multimodal Damage Classification")
+st.write("Upload an image + enter text to classify disaster damage using a multimodal fusion model (BERT + ResNet).")
 
-# --------------------------------------
-# ✅ Load Model
-# --------------------------------------
+# ---------------------------------------------------
+# ✅ Load Model (cached)
+# ---------------------------------------------------
 @st.cache_resource
 def load_model():
     device = "cpu"
@@ -27,22 +27,22 @@ def load_model():
 model = load_model()
 device = "cpu"
 
-# --------------------------------------
+# ---------------------------------------------------
 # ✅ Tokenizer for Text
-# --------------------------------------
+# ---------------------------------------------------
 tokenizer = DistilBertTokenizerFast.from_pretrained("distilbert-base-uncased")
 
-# --------------------------------------
+# ---------------------------------------------------
 # ✅ Image Preprocessing
-# --------------------------------------
+# ---------------------------------------------------
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor()
 ])
 
-# --------------------------------------
-# ✅ Labels
-# --------------------------------------
+# ---------------------------------------------------
+# ✅ Labels for Output
+# ---------------------------------------------------
 idx2label = {
     0: "Don’t know / Can't Judge",
     1: "Little or No Damage",
@@ -51,9 +51,9 @@ idx2label = {
     4: "Severe Damage"
 }
 
-# --------------------------------------
+# ---------------------------------------------------
 # ✅ Prediction Function
-# --------------------------------------
+# ---------------------------------------------------
 def predict_damage(text, image):
     encoded = tokenizer(
         text, truncation=True, padding="max_length",
@@ -74,15 +74,15 @@ def predict_damage(text, image):
 
     return idx2label[pred], confidence
 
-# --------------------------------------
-# ✅ User Inputs
-# --------------------------------------
+# ---------------------------------------------------
+# ✅ Streamlit Input UI
+# ---------------------------------------------------
 uploaded_img = st.file_uploader("📷 Upload Disaster Image", type=["jpg", "jpeg", "png"])
 input_text = st.text_area("📝 Enter Tweet / Description Text")
 
 if st.button("🔮 Predict Damage Level"):
     if uploaded_img is None or input_text.strip() == "":
-        st.error("Please upload an image AND enter text.")
+        st.error("⚠️ Please upload an image AND enter text.")
         st.stop()
 
     image = Image.open(uploaded_img).convert("RGB")
@@ -96,4 +96,4 @@ if st.button("🔮 Predict Damage Level"):
     st.write(f"**Damage Level:** {label}")
     st.write(f"**Confidence:** {confidence:.2f}")
 
-    st.success("Prediction complete!")
+    st.success("✅ Prediction complete!")
