@@ -1,58 +1,123 @@
 import streamlit as st
-from PIL import Image
 import torch
-import torchvision.transforms as T
-from transformers import DistilBertTokenizerFast
+from PIL import Image
+from torchvision import transforms
 
-# ------------------------------
-# Load Model
-# ------------------------------
+from models.early_fusion import EarlyFusionModel
+from models.late_fusion import LateFusionModel
+from models.hybrid_fusion import HybridFusionModel
 
-from model import LateFusionModel   # <-- We will add model.py next
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# --------------------------------------
+# ✅ App Title
+# --------------------------------------
+st.set_page_config(page_title="Crisis Damage Detection - Multimodal")
+st.title("🔥 CrisisMMD — Multimodal Damage Classification")
+st.write("Upload an image + enter text to classify disaster damage using Early, Late & Hybrid Fusion models.")
 
-tokenizer = DistilBertTokenizerFast.from_pretrained("distilbert-base-uncased")
+# --------------------------------------
+# ✅ Load Models
+# --------------------------------------
+@st.cache_resource
+def load_models():
+    device = "cpu"
+    early = EarlyFusionModel().to(device)
+    late = LateFusionModel().to(device)
+    hybrid = HybridFusionModel().to(device)
 
-# Load trained model
-model = LateFusionModel().to(device)
-model.load_state_dict(torch.load("late_fusion_crisis_model.pth", map_location=device))
-model.eval()
+    # YOUR SAVED MODELS CHECKPOINTS (update paths if needed)
+    try:
+        early.load_state_dict(torch.load("models/early_fusion.pt", map_location="cpu"))
+    except:
+        pass
 
-# Image transform for ResNet
-transform = T.Compose([
-    T.Resize((224, 224)),
-    T.ToTensor(),
-    T.Normalize([0.485,0.456,0.406], [0.229,0.224,0.225])
+    try:
+        late.load_state_dict(torch.load("models/late_fusion.pt", map_location="cpu"))
+    except:
+        pass
+
+    try:
+        hybrid.load_state_dict(torch.load("models/hybrid_fusion.pt", map_location="cpu"))
+    except:
+        pass
+
+    early.eval()
+    late.eval()
+    hybrid.eval()
+    return early, late, hybrid
+
+
+early_model, late_model, hybrid_model = load_models()
+device = "cpu"
+
+# --------------------------------------
+# ✅ Image Preprocessing
+# --------------------------------------
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor()
 ])
 
-def predict(tweet, img):
-    encoded = tokenizer(tweet, truncation=True, padding='max_length', max_length=64, return_tensors='pt').to(device)
-    img = transform(img).unsqueeze(0).to(device)
+# --------------------------------------
+# ✅ Class Labels
+# --------------------------------------
+idx2label = {
+    0: "Don't know / Can't judge",
+    1: "Little or no damage",
+    2: "Mild damage",
+    3: "None",
+    4: "Severe damage"
+}
 
-    with torch.no_grad():
-        logits = model(encoded["input_ids"], encoded["attention_mask"], img)
-        pred = torch.argmax(torch.softmax(logits, dim=1), dim=1).item()
+# --------------------------------------
+# ✅ Input Fields
+# --------------------------------------
+uploaded_img = st.file_uploader("📷 Upload Disaster Image", type=["jpg", "jpeg", "png"])
+input_text = st.text_area("📝 Enter Tweet / Description Text")
 
-    return "CRISIS / INFORMATIVE ✅" if pred == 1 else "NOT CRISIS 🚫"
+fusion_choice = st.selectbox(
+    "Select Fusion Model",
+    ["Early Fusion", "Late Fusion", "Hybrid Fusion"]
+)
 
+if st.button("🔮 Predict Damage Level"):
+    if uploaded_img is None or input_text.strip() == "":
+        st.error("Please upload an image and enter text!")
+        st.stop()
 
-# ------------------------------
-# Streamlit UI
-# ------------------------------
+    # --------------------------------------
+    # ✅ Preprocess Image
+    # --------------------------------------
+    image = Image.open(uploaded_img).convert("RGB")
+    st.image(image, caption="Uploaded Image", width=250)
 
-st.title("🚨 Crisis Detection System")
-st.write("Upload an image and enter a tweet to detect crisis-related content.")
+    img_tensor = transform(image).unsqueeze(0)
 
-tweet = st.text_area("Enter Tweet Text Here")
-
-uploaded_img = st.file_uploader("Upload Image", type=["jpg", "jpeg", "png"])
-
-if st.button("Predict"):
-    if uploaded_img is None or tweet.strip() == "":
-        st.error("Please upload an image AND enter a tweet.")
+    # --------------------------------------
+    # ✅ Select Model
+    # --------------------------------------
+    if fusion_choice == "Early Fusion":
+        model = early_model
+    elif fusion_choice == "Late Fusion":
+        model = late_model
     else:
-        img = Image.open(uploaded_img).convert("RGB")
-        st.image(img, caption="Uploaded Image", use_column_width=True)
+        model = hybrid_model
 
-        result = predict(tweet, img)
-        st.subheader(f"Prediction: **{result}**")
+    # --------------------------------------
+    # ✅ Run Prediction
+    # --------------------------------------
+    with torch.no_grad():
+        output = model([input_text], img_tensor)
+        probs = torch.softmax(output, dim=1)
+        pred = torch.argmax(probs, dim=1).item()
+        confidence = probs[0][pred].item()
+
+    label = idx2label[pred]
+
+    # --------------------------------------
+    # ✅ Display Results
+    # --------------------------------------
+    st.subheader("Prediction Result")
+    st.write(f"**Damage Level:** {label}")
+    st.write(f"**Confidence:** {confidence:.2f}")
+
+    st.success("Prediction complete!")
