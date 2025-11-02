@@ -3,44 +3,31 @@ import torch.nn as nn
 from transformers import DistilBertModel
 from torchvision import models
 
-class MiniFusion(nn.Module):
+class LateFusionModel(nn.Module):
     def __init__(self):
         super().__init__()
 
-        # -----------------------------
-        # ✅ TEXT ENCODER — DistilBERT
-        # -----------------------------
-        self.text_model = DistilBertModel.from_pretrained(
-            "distilbert-base-uncased"
-        )
-        self.text_fc = nn.Linear(768, 128)  # BERT → 128 dims
+        # TEXT ENCODER (DistilBERT)
+        self.text_model = DistilBertModel.from_pretrained("distilbert-base-uncased")
+        self.text_fc = nn.Linear(768, 128)
 
-        # -----------------------------
-        # ✅ IMAGE ENCODER — ResNet18
-        # -----------------------------
+        # IMAGE ENCODER (ResNet18)
         resnet = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
-        resnet.fc = nn.Linear(512, 128)  # ResNet → 128 dims
+        resnet.fc = nn.Linear(512, 128)
         self.image_model = resnet
 
-        # -----------------------------
-        # ✅ FUSION CLASSIFIER
-        # -----------------------------
-        # 128 (text) + 128 (image) = 256
-        self.classifier = nn.Linear(256, 5)  # 5 damage categories
+        # BINARY CLASSIFIER
+        self.classifier = nn.Linear(256, 2)   # Crisis / Not Crisis
 
     def forward(self, input_ids, attention_mask, images):
-        # BERT features
-        text_features = self.text_model(
+        text_feat = self.text_model(
             input_ids=input_ids,
             attention_mask=attention_mask
-        ).last_hidden_state[:, 0, :]     # [CLS] token
+        ).last_hidden_state[:, 0, :]
+        text_feat = self.text_fc(text_feat)
 
-        text_features = self.text_fc(text_features)
+        img_feat = self.image_model(images)
 
-        # Image features
-        image_features = self.image_model(images)
-
-        # Fusion
-        fused = torch.cat([text_features, image_features], dim=1)
+        fused = torch.cat([text_feat, img_feat], dim=1)
 
         return self.classifier(fused)
