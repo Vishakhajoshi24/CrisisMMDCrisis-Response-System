@@ -1,26 +1,24 @@
 import torch
 import torch.nn as nn
-from transformers import DistilBertModel
 from torchvision import models
+from transformers import DistilBertModel
 
-class LateFusionModel(nn.Module):
+class MiniFusion(nn.Module):
     def __init__(self):
-        super(LateFusionModel, self).__init__()
-        
+        super().__init__()
+
         self.text_model = DistilBertModel.from_pretrained("distilbert-base-uncased")
-        self.text_fc = nn.Linear(768, 2)
+        self.text_fc = nn.Linear(768, 128)
 
         resnet = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
-        resnet.fc = nn.Linear(512, 2)
+        resnet.fc = nn.Linear(512, 128)
         self.image_model = resnet
 
+        self.classifier = nn.Linear(256, 2)
+
     def forward(self, input_ids, attention_mask, images):
-        text_feat = self.text_model(
-            input_ids=input_ids,
-            attention_mask=attention_mask
-        ).last_hidden_state[:, 0, :]
-        text_logits = self.text_fc(text_feat)
-
-        image_logits = self.image_model(images)
-
-        return (text_logits + image_logits) / 2
+        t = self.text_model(input_ids=input_ids, attention_mask=attention_mask).last_hidden_state[:,0,:]
+        t = self.text_fc(t)
+        i = self.image_model(images)
+        fused = torch.cat([t, i], dim=1)
+        return self.classifier(fused)
